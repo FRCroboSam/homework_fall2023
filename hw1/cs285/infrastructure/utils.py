@@ -13,7 +13,7 @@ import time
 from cs285.infrastructure import pytorch_util as ptu
 
 
-def sample_trajectory(env, policy, max_path_length, render=False):
+def sample_trajectory(env, policy, max_path_length, expertPolicy=None, render=False):
     """Sample a rollout in the environment from a policy."""
     
     # initialize env for the beginning of a new rollout
@@ -34,13 +34,20 @@ def sample_trajectory(env, policy, max_path_length, render=False):
     
         # TODO use the most recent ob to decide what to do
         ac = policy.get_action(ob)
-
+        # print("EXPERT POLICY")
+        # print(expertPolicy)
+        if(expertPolicy):
+            expertAc = expertPolicy.get_action(ob)[0] 
+            # print("EXPERT ACTION")
+            # print(expertAc)
+            # print("ACTUAL ACTION")
+            # print(ac)
         # TODO: take that action and get reward and next ob
         next_ob, rew, done, _ = env.step(ac)
         
         # TODO rollout can end due to done, or due to max_path_length
         steps += 1
-        rollout_done = done or steps == max_path_length
+        rollout_done = done or steps >= max_path_length
         
         # record result of taking that action
         obs.append(ob)
@@ -63,7 +70,7 @@ def sample_trajectory(env, policy, max_path_length, render=False):
             "terminal": np.array(terminals, dtype=np.float32)}
 
 
-def sample_trajectories(env, policy, min_timesteps_per_batch, max_path_length, render=False):
+def sample_trajectories(env, policy, min_timesteps_per_batch, max_path_length, expertPolicy=None, render=False):
     """Collect rollouts until we have collected min_timesteps_per_batch steps."""
 
     timesteps_this_batch = 0
@@ -71,12 +78,11 @@ def sample_trajectories(env, policy, min_timesteps_per_batch, max_path_length, r
     while timesteps_this_batch < min_timesteps_per_batch:
 
         #collect rollout
-        path = sample_trajectory(env, policy, max_path_length, render)
+        path = sample_trajectory(env, policy, max_path_length, expertPolicy=expertPolicy, render=render)
         paths.append(path)
 
         #count steps
         timesteps_this_batch += get_pathlength(path)
-    print("ENDING ON: " + str(timesteps_this_batch))
     return paths, timesteps_this_batch
 
 

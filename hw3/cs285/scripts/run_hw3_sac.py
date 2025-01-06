@@ -68,7 +68,7 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
             action = env.action_space.sample()
         else:
             # TODO(student): Select an action
-            action = ...
+            action = agent.get_action(observation)
 
         # Step the environment and add the data to the replay buffer
         next_observation, reward, done, info = env.step(action)
@@ -90,8 +90,12 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
         # Train the agent
         if step >= config["training_starts"]:
             # TODO(student): Sample a batch of config["batch_size"] transitions from the replay buffer
-            batch = ...
-            update_info = ...
+            batch = ptu.from_numpy(replay_buffer.sample(config["batch_size"]))
+            #update agent with batch of info to parallelize operations
+
+
+            update_info = agent.update(batch['observations'], batch['actions'], batch['rewards'], batch['next_observations'],
+                                       batch['dones'], step)
 
             # Logging
             update_info["actor_lr"] = agent.actor_lr_scheduler.get_last_lr()[0]
@@ -113,7 +117,7 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
             )
             returns = [t["episode_statistics"]["r"] for t in trajectories]
             ep_lens = [t["episode_statistics"]["l"] for t in trajectories]
-
+            print("RETURN: " + str(np.mean(returns)))
             logger.log_scalar(np.mean(returns), "eval_return", step)
             logger.log_scalar(np.mean(ep_lens), "eval_ep_len", step)
 

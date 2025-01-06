@@ -121,7 +121,7 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
         else:
             observation = obs
         #return action from the policy 
-        action = self(ptu.from_numpy(observation))
+        action = self.forward(ptu.from_numpy(observation))
         return ptu.to_numpy(action)
     
     #should be correct
@@ -138,12 +138,12 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
         # through it. For example, you can return a torch.FloatTensor. You can also
         # return more flexible objects, such as a
         # `torch.distributions.Distribution` object. It's up to you!
-        print("BEFORE MEAN")
+        #observation = ptu.from_numpy(observation)
         mean = self.mean_net(observation)
-        print("AFter MEAN")
+
         std = torch.exp(self.logstd)
         # Create a Normal distribution
-        normal_dist = torch.distributions.Normal(mean, std)
+        normal_dist = distributions.Normal(mean, std)
         
         # Sample from the distribution and ensure differentiability with rsample()
         action = normal_dist.rsample()  # Differentiable sampling
@@ -159,7 +159,11 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
             dict: 'Training Loss': supervised learning loss
         """
         # TODO: update the policy and return the loss
+        observations = ptu.from_numpy(observations)
+        actions = ptu.from_numpy(actions)
+        self.optimizer.zero_grad()
         action_predictions = self.forward(observations)
+        
         loss_fn = nn.MSELoss(); 
         loss = loss_fn(action_predictions, actions)
         

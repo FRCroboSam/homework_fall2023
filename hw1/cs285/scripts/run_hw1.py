@@ -19,15 +19,51 @@ from cs285.infrastructure.logger import Logger
 from cs285.infrastructure.replay_buffer import ReplayBuffer
 from cs285.policies.MLP_policy import MLPPolicySL
 from cs285.policies.loaded_gaussian_policy import LoadedGaussianPolicy
-
-
+import matplotlib.pyplot as plt
+import pandas as pd
 # how many rollouts to save as videos to tensorboard
 MAX_NVIDEO = 2
 MAX_VIDEO_LEN = 40  # we overwrite this in the code below
 
 MJ_ENV_NAMES = ["Ant-v4", "Walker2d-v4", "HalfCheetah-v4", "Hopper-v4"]
 
+# Evaluate the expert policy performance by running it in the environment
+# def evaluate_expert(env, expert_policy, n_episodes=10):
+#     total_return = 0
+#     for _ in range(n_episodes):
+#         obs = env.reset()[0]  # reset environment and get the first observation
+#         done = False
+#         episode_return = 0
+#         while not done:
+#             action = expert_policy.get_action(obs)  # get action from expert
+#             obs, reward, done, _, _ = env.step(action)  # take action and observe next state
+#             episode_return += reward
+#         total_return += episode_return
+#     return total_return / n_episodes
 
+
+def save_table(logs, params):
+    # Create a DataFrame for the table
+    data = {
+        "Metric": ["Average Return", "Standard Deviation", "Episode Length", "Batch Size", "Dagger"],
+        "Value": [
+            logs['Eval_AverageReturn'], 
+            logs['Eval_StdReturn'], 
+            params['ep_len'], 
+            params['eval_batch_size'], 
+            'Yes' if params.get('dagger', False) else 'No'
+        ]
+    }
+    df = pd.DataFrame(data)
+
+    # Ensure the 'graphs' folder exists
+    os.makedirs('graphs', exist_ok=True)
+
+    # Save the table as a CSV file
+    filename = f"graphs/{params['env_name']}_results.csv"
+    df.to_csv(filename, index=False)
+
+    print(f"Table saved to {filename}")
 def run_training_loop(params):
     """
     Runs training with the specified parameters
@@ -103,6 +139,7 @@ def run_training_loop(params):
     expert_policy = LoadedGaussianPolicy(params['expert_policy_file'])
     expert_policy.to(ptu.device)
     print('Done restoring expert policy...')
+    
 
     #######################
     ## TRAINING LOOP
@@ -131,8 +168,8 @@ def run_training_loop(params):
             # TODO: collect `params['batch_size']` transitions
             # HINT: use utils.sample_trajectories
             # TODO: implement missing parts of utils.sample_trajectory
-            print("BATCH SIZE")
-            print(params['batch_size'])
+            # print("BATCH SIZE")
+            # print(params['batch_size'])
             paths, envsteps_this_batch = utils.sample_trajectories(
                 env, actor, params['batch_size'], params['ep_len'])
 
@@ -151,8 +188,8 @@ def run_training_loop(params):
                     for path in paths
                 ]
                 
-        print("ENV STEPS THIS BATCH")
-        print(envsteps_this_batch)
+        # print("ENV STEPS THIS BATCH")
+        # print(envsteps_this_batch)
         total_envsteps += envsteps_this_batch
         # add collected data to replay buffer
         replay_buffer.add_rollouts(paths)
@@ -161,7 +198,8 @@ def run_training_loop(params):
         print('\nTraining agent using sampled data from replay buffer...')
         training_logs = []
         for _ in range(params['num_agent_train_steps_per_iter']):
-
+        #   print("RUNNING THIS: ")
+        #   print(params['num_agent_train_steps_per_iter'])
           # TODO: sample some data from replay_buffer
           # HINT1: how much data = params['train_batch_size'] -- 100 
           # HINT2: use np.random.permutation to sample random indices
@@ -169,12 +207,13 @@ def run_training_loop(params):
           # for imitation learning, we only need observations and actions. 
           
           indices = np.random.permutation(len(replay_buffer.obs))[:params['train_batch_size']]
-          ob_batch = torch.tensor(replay_buffer.obs[indices], dtype=torch.float32)
-          ac_batch = torch.tensor(replay_buffer.acs[indices], dtype=torch.float32)
+          ob_batch = replay_buffer.obs[indices]
+          ac_batch = replay_buffer.acs[indices]
         #   print("OB BATCH")
         #   print(ob_batch)
           # use the sampled data to train an agent
           train_log = actor.update(ob_batch, ac_batch)
+          
           training_logs.append(train_log)
         
 
@@ -195,13 +234,17 @@ def run_training_loop(params):
                     video_title='eval_rollouts')
 
         if log_metrics:
-            print("DOING SAMPLE TRAJ")
-            # save eval metrics
-            print("\nCollecting data for eval...")
-            print(params['eval_batch_size'])
+            # print("DOING SAMPLE TRAJ")
+            # # save eval metrics
+            # print("\nCollecting data for eval...")
+            # print(params['eval_batch_size'])
             eval_paths, eval_envsteps_this_batch = utils.sample_trajectories(
-                env, actor, params['eval_batch_size'], params['ep_len'])
+                env, actor, params['eval_batch_size'], params['ep_len'], expertPolicy=expert_policy)
 
+            # print("EVAIL BATCH SIZE")
+            # print(params['eval_batch_size'])
+            # print("EP LEN")
+            # print(params['ep_len'])
             logs = utils.compute_metrics(paths, eval_paths)
             # compute additional metrics
             logs.update(training_logs[-1]) # Only use the last log for now
@@ -209,7 +252,17 @@ def run_training_loop(params):
             logs["TimeSinceStart"] = time.time() - start_time
             if itr == 0:
                 logs["Initial_DataCollection_AverageReturn"] = logs["Train_AverageReturn"]
+            save_table(logs, params)
 
+            
+            #evaluate_expert(env, expert_policy)
+            #MORE LOGS:
+            #logs['Eval_AverageReturn']
+            #logs['Eval_StdReturn']
+            #Table caption -> params[ep_len], params[eval_batch_size], env_name, dagger or no dagger
+            #save to folder called graphs
+            
+            
             # perform the logging
             for key, value in logs.items():
                 print('{} : {}'.format(key, value))
@@ -238,7 +291,7 @@ def main():
 
     parser.add_argument('--batch_size', type=int, default=1000)  # training data collected (in the env) during each iteration
     parser.add_argument('--eval_batch_size', type=int,
-                        default=1000)  # eval data collected (in the env) for logging metrics
+                        default=5000)  # eval data collected (in the env) for logging metrics
     parser.add_argument('--train_batch_size', type=int,
                         default=100)  # number of sampled data points to be used per gradient/train step
 
@@ -290,3 +343,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+

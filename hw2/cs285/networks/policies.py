@@ -58,9 +58,9 @@ class MLPPolicy(nn.Module):
     @torch.no_grad()
     def get_action(self, obs: np.ndarray) -> np.ndarray:
         """Takes a single observation (as a numpy array) and returns a single action (as a numpy array)."""
-        # TODO: implement get_action
-        action = None
+        # implement get_action
 
+        action = ptu.to_numpy(self.forward(ptu.from_numpy(obs)).sample())
         return action
 
     def forward(self, obs: torch.FloatTensor):
@@ -70,12 +70,16 @@ class MLPPolicy(nn.Module):
         flexible objects, such as a `torch.distributions.Distribution` object. It's up to you!
         """
         if self.discrete:
-            # TODO: define the forward pass for a policy with a discrete action space.
-            pass
+            logits = self.logits_net(obs)
+            return distributions.Categorical(logits=logits)
+            
         else:
-            # TODO: define the forward pass for a policy with a continuous action space.
-            pass
-        return None
+            mean = self.mean_net(obs)
+            std = torch.exp(self.logstd)  # Convert log standard deviation to standard deviation
+            # Create a Normal distribution
+            normal_dist = torch.distributions.MultivariateNormal(mean, scale_tril=torch.diag(std))
+
+            return normal_dist
 
     def update(self, obs: np.ndarray, actions: np.ndarray, *args, **kwargs) -> dict:
         """Performs one iteration of gradient descent on the provided batch of data."""
@@ -96,9 +100,20 @@ class MLPPolicyPG(MLPPolicy):
         actions = ptu.from_numpy(actions)
         advantages = ptu.from_numpy(advantages)
 
-        # TODO: implement the policy gradient actor update.
-        loss = None
-
+        # implement the policy gradient actor update.
+        
+        # criterion = nn.CrossEntropyLoss(); 
+        # negative_likelihoods = criterion(predictions, actions)
+        # weighted_loss = negative_likelihoods * advantages
+        # mean_loss = weighted_loss.mean() 
+        self.optimizer.zero_grad()
+        
+        #compute the gradient (loss is negative of the gradient)
+        log_pi_theta = self.forward(obs).log_prob(actions) #get log probabilities of different actions from the action distribution for the list of observations
+        loss = torch.neg(torch.mean(torch.mul(log_pi_theta, advantages))) #tune parameters using policy gradient def with advantage
+        loss.backward()
+        
+        self.optimizer.step()
         return {
             "Actor Loss": ptu.to_numpy(loss),
         }
